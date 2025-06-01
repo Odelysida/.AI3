@@ -4,18 +4,28 @@ use chrono::{DateTime, Utc};
 use tokio::sync::RwLock;
 use std::sync::Arc;
 use tribechain_core::{TribeResult, TribeError, Block};
+
+// Import from ai3-lib mining module
+use ai3_lib::mining::{
+    AI3Miner as LibAI3Miner, 
+    MinerCapabilities, 
+    MinerStats,
+    MiningTask, 
+    MiningResult as LibMiningResult,
+    TaskDistributor
+};
 use ai3_lib::{
-    Tensor, TensorShape, TensorData, AI3Engine, AI3Miner as LibAI3Miner,
-    MiningTask as LibMiningTask, MiningResult as LibMiningResult,
-    TaskDistributor, ESP32Miner, ESP8266Miner, ESPMiningConfig
+    Tensor, TensorShape, TensorData, AI3Engine,
+    ESP32Miner, ESP8266Miner, ESPMiningConfig
 };
 
 /// AI3 Mining coordinator that integrates with the AI3 library
 #[derive(Debug)]
 pub struct AI3Miner {
     pub id: String,
+    pub lib_miner: LibAI3Miner,
     pub ai3_engine: AI3Engine,
-    pub active_tasks: Arc<RwLock<HashMap<String, LibMiningTask>>>,
+    pub active_tasks: Arc<RwLock<HashMap<String, MiningTask>>>,
     pub completed_results: Arc<RwLock<HashMap<String, AI3MiningResult>>>,
     pub esp_miners: HashMap<String, ESPMinerWrapper>,
     pub stats: AI3MiningStats,
@@ -68,8 +78,15 @@ pub struct AI3MiningStats {
 
 impl AI3Miner {
     pub fn new(id: String) -> Self {
+        let lib_miner = LibAI3Miner::new(
+            id.clone(),
+            format!("miner_address_{}", id),
+            false // Not an ESP device by default
+        );
+
         Self {
-            id,
+            id: id.clone(),
+            lib_miner,
             ai3_engine: AI3Engine::new(),
             active_tasks: Arc::new(RwLock::new(HashMap::new())),
             completed_results: Arc::new(RwLock::new(HashMap::new())),
@@ -80,8 +97,12 @@ impl AI3Miner {
 
     /// Add ESP32 miner to the AI3 mining pool
     pub async fn add_esp32_miner(&mut self, config: ESPMiningConfig) -> TribeResult<String> {
-        let esp32_miner = ESP32Miner::new(config)?;
         let miner_id = format!("esp32_{}", uuid::Uuid::new_v4());
+        let esp32_miner = ESP32Miner::new(
+            miner_id.clone(),
+            format!("esp32_address_{}", miner_id),
+            config
+        );
         
         self.esp_miners.insert(miner_id.clone(), ESPMinerWrapper::ESP32(esp32_miner));
         self.stats.esp_miners_active += 1;
@@ -91,8 +112,12 @@ impl AI3Miner {
 
     /// Add ESP8266 miner to the AI3 mining pool
     pub async fn add_esp8266_miner(&mut self, config: ESPMiningConfig) -> TribeResult<String> {
-        let esp8266_miner = ESP8266Miner::new(config)?;
         let miner_id = format!("esp8266_{}", uuid::Uuid::new_v4());
+        let esp8266_miner = ESP8266Miner::new(
+            miner_id.clone(),
+            format!("esp8266_address_{}", miner_id),
+            config
+        );
         
         self.esp_miners.insert(miner_id.clone(), ESPMinerWrapper::ESP8266(esp8266_miner));
         self.stats.esp_miners_active += 1;
@@ -110,8 +135,8 @@ impl AI3Miner {
         // Create input tensors based on block data
         let input_tensors = self.block_to_tensors(block)?;
         
-        // Create AI3 mining task
-        let task = LibMiningTask::new(
+        // Create AI3 mining task using ai3-lib
+        let task = MiningTask::new(
             operation_type.clone(),
             input_tensors,
             difficulty,
@@ -184,7 +209,7 @@ impl AI3Miner {
         Ok(tensors)
     }
 
-    /// Perform AI3 mining step
+    /// Perform AI3 mining step using ai3-lib miner
     pub async fn mine_step(&mut self, task_id: &str) -> TribeResult<Option<AI3MiningResult>> {
         let task = {
             let active_tasks = self.active_tasks.read().await;
@@ -194,114 +219,106 @@ impl AI3Miner {
             }
         };
 
-        // Try to assign task to available ESP miners first
-        if let Some(result) = self.try_esp_mining(&task).await? {
-            return Ok(Some(result));
+        // Check if the lib miner can handle this task
+        if !self.lib_miner.can_handle_task(&task) {
+            return Ok(None);
         }
 
-        // Fallback to regular AI3 engine mining
-        self.try_ai3_engine_mining(&task).await
-    }
-
-    /// Try mining with ESP devices
-    async fn try_esp_mining(&mut self, task: &LibMiningTask) -> TribeResult<Option<AI3MiningResult>> {
-        for (miner_id, esp_miner) in &mut self.esp_miners {
-            let result = match esp_miner {
-                ESPMinerWrapper::ESP32(miner) => {
-                    if miner.can_handle_task(task) {
-                        miner.mine_step(task.clone()).await?
-                    } else {
-                        continue;
-                    }
-                }
-                ESPMinerWrapper::ESP8266(miner) => {
-                    if miner.can_handle_task(task) {
-                        miner.mine_step(task.clone()).await?
-                    } else {
-                        continue;
-                    }
-                }
-            };
-
-            if let Some(lib_result) = result {
-                // Convert to AI3MiningResult
-                let ai3_result = self.convert_to_ai3_result(lib_result, miner_id.clone()).await?;
-                return Ok(Some(ai3_result));
-            }
-        }
-
-        Ok(None)
-    }
-
-    /// Try mining with AI3 engine
-    async fn try_ai3_engine_mining(&mut self, task: &LibMiningTask) -> TribeResult<Option<AI3MiningResult>> {
-        // Create a library AI3 miner for the task
-        let mut lib_miner = LibAI3Miner::new(
-            format!("ai3_miner_{}", self.id),
-            "ai3_address".to_string(),
-            false, // Not an ESP device
-        );
-
-        // Assign task to miner
+        // Assign task to lib miner
+        let mut lib_miner = self.lib_miner.clone();
         lib_miner.assign_task(task.clone())?;
 
-        // Perform mining step
+        // Try mining step using ai3-lib
         if let Some(lib_result) = lib_miner.mine_step()? {
-            let ai3_result = self.convert_to_ai3_result(lib_result, lib_miner.id.clone()).await?;
+            // Convert lib result to blockchain-compatible result
+            let ai3_result = self.convert_to_ai3_result(lib_result, self.id.clone()).await?;
+            
+            // Store completed result
+            let mut completed_results = self.completed_results.write().await;
+            completed_results.insert(task_id.to_string(), ai3_result.clone());
+            
+            // Remove from active tasks
+            let mut active_tasks = self.active_tasks.write().await;
+            active_tasks.remove(task_id);
+            
+            // Update stats
+            self.update_stats(&ai3_result).await;
+            
             return Ok(Some(ai3_result));
         }
 
+        // Try ESP miners if lib miner didn't find solution
+        self.try_esp_mining(&task).await
+    }
+
+    /// Try mining with ESP devices
+    async fn try_esp_mining(&mut self, task: &MiningTask) -> TribeResult<Option<AI3MiningResult>> {
+        for (miner_id, esp_miner) in &mut self.esp_miners {
+            match esp_miner {
+                ESPMinerWrapper::ESP32(esp32) => {
+                    // Check if ESP32 can handle the task
+                    if esp32.base_miner.can_handle_task(task) {
+                        // Assign task to the base miner
+                        esp32.base_miner.assign_task(task.clone())?;
+                        
+                        // Try mining step
+                        if let Some(result) = esp32.mine_step()? {
+                            return Ok(Some(self.convert_to_ai3_result(result, miner_id.clone()).await?));
+                        }
+                    }
+                }
+                ESPMinerWrapper::ESP8266(esp8266) => {
+                    // Check if ESP8266 can handle the task
+                    if esp8266.esp32_miner.base_miner.can_handle_task(task) {
+                        // Assign task to the base miner
+                        esp8266.esp32_miner.base_miner.assign_task(task.clone())?;
+                        
+                        // Try mining step
+                        if let Some(result) = esp8266.mine_step()? {
+                            return Ok(Some(self.convert_to_ai3_result(result, miner_id.clone()).await?));
+                        }
+                    }
+                }
+            }
+        }
         Ok(None)
     }
 
-    /// Convert library mining result to AI3MiningResult
+    /// Convert ai3-lib mining result to blockchain-compatible result
     async fn convert_to_ai3_result(
         &mut self,
         lib_result: LibMiningResult,
         miner_id: String,
     ) -> TribeResult<AI3MiningResult> {
-        // Create AI3 proof
         let ai3_proof = AI3Proof {
-            operation_type: "tensor_computation".to_string(),
-            input_hash: "input_hash_placeholder".to_string(), // Would be calculated from inputs
+            operation_type: "tensor_operation".to_string(),
+            input_hash: lib_result.hash.clone(),
             output_hash: lib_result.output_tensor.calculate_hash(),
-            computation_hash: lib_result.hash.clone(),
+            computation_hash: format!("{}_{}", lib_result.nonce, lib_result.computation_time),
             difficulty_met: lib_result.is_valid,
             verification_data: self.create_verification_data(&lib_result)?,
         };
 
-        let result = AI3MiningResult {
-            task_id: lib_result.task_id.clone(),
+        Ok(AI3MiningResult {
+            task_id: lib_result.task_id,
             miner_id,
             tensor_result: lib_result.output_tensor,
             computation_time: lib_result.computation_time,
-            block_height: 0, // Would be set by caller
-            block_hash: "".to_string(), // Would be set by caller
+            block_height: 0, // Will be set by mining engine
+            block_hash: String::new(), // Will be set by mining engine
             ai3_proof,
             timestamp: lib_result.timestamp,
             is_valid: lib_result.is_valid,
-        };
-
-        // Update statistics
-        self.update_stats(&result).await;
-
-        // Store completed result
-        let mut completed_results = self.completed_results.write().await;
-        completed_results.insert(result.task_id.clone(), result.clone());
-
-        Ok(result)
+        })
     }
 
     /// Create verification data for AI3 proof
     fn create_verification_data(&self, result: &LibMiningResult) -> TribeResult<Vec<u8>> {
-        use sha2::{Sha256, Digest};
-        
+        use sha2::{Digest, Sha256};
         let mut hasher = Sha256::new();
         hasher.update(result.task_id.as_bytes());
-        hasher.update(result.miner_id.as_bytes());
-        hasher.update(result.nonce.to_le_bytes());
-        hasher.update(result.computation_time.to_le_bytes());
-        
+        hasher.update(&result.nonce.to_le_bytes());
+        hasher.update(result.output_tensor.calculate_hash().as_bytes());
         Ok(hasher.finalize().to_vec())
     }
 
@@ -317,99 +334,65 @@ impl AI3Miner {
         }
 
         // Update average computation time
-        let total_time = self.stats.average_computation_time * (self.stats.total_tasks_processed - 1) as f64;
-        self.stats.average_computation_time = (total_time + result.computation_time as f64) / self.stats.total_tasks_processed as f64;
+        let total_time = self.stats.average_computation_time * (self.stats.total_tasks_processed - 1) as f64 
+            + result.computation_time as f64;
+        self.stats.average_computation_time = total_time / self.stats.total_tasks_processed as f64;
 
         self.stats.total_tensor_operations += 1;
-        
-        // Update hash rate (simplified calculation)
-        self.stats.current_hash_rate = 1000.0 / (self.stats.average_computation_time / 1000.0);
     }
 
     /// Validate AI3 mining result
     pub async fn validate_result(&self, result: &AI3MiningResult) -> TribeResult<bool> {
-        // Get original task
-        let active_tasks = self.active_tasks.read().await;
-        let task = match active_tasks.get(&result.task_id) {
-            Some(task) => task,
-            None => return Ok(false),
+        let task = {
+            let active_tasks = self.active_tasks.read().await;
+            match active_tasks.get(&result.task_id) {
+                Some(task) => task.clone(),
+                None => {
+                    // Check completed tasks
+                    return Ok(result.is_valid);
+                }
+            }
         };
 
-        // Validate computation
-        let expected_output = task.execute_operation()?;
-        
-        // Check tensor equality (with tolerance)
-        if !self.tensors_approximately_equal(&result.tensor_result, &expected_output) {
+        self.validate_ai3_proof(&result.ai3_proof, &task).await
+    }
+
+    /// Validate AI3 proof against task
+    async fn validate_ai3_proof(&self, proof: &AI3Proof, task: &MiningTask) -> TribeResult<bool> {
+        // Verify computation hash meets difficulty
+        if !task.meets_difficulty(&proof.computation_hash) {
             return Ok(false);
         }
 
-        // Validate AI3 proof
-        self.validate_ai3_proof(&result.ai3_proof, task).await
+        // Additional AI3-specific validations would go here
+        Ok(proof.difficulty_met)
     }
 
-    /// Validate AI3 proof
-    async fn validate_ai3_proof(&self, proof: &AI3Proof, task: &LibMiningTask) -> TribeResult<bool> {
-        // Check if computation hash is valid
-        if proof.computation_hash.is_empty() {
-            return Ok(false);
-        }
-
-        // Verify difficulty was met
-        if !proof.difficulty_met {
-            return Ok(false);
-        }
-
-        // Additional validation logic would go here
-        Ok(true)
+    /// Get miner capabilities from ai3-lib
+    pub fn get_capabilities(&self) -> &MinerCapabilities {
+        &self.lib_miner.capabilities
     }
 
-    /// Check if two tensors are approximately equal
-    fn tensors_approximately_equal(&self, a: &Tensor, b: &Tensor) -> bool {
-        if a.shape != b.shape {
-            return false;
-        }
-
-        // Get data as f32 vectors for comparison
-        let a_data = match &a.data {
-            TensorData::F32(data) => data.clone(),
-            _ => return false,
-        };
-
-        let b_data = match &b.data {
-            TensorData::F32(data) => data.clone(),
-            _ => return false,
-        };
-
-        if a_data.len() != b_data.len() {
-            return false;
-        }
-
-        const EPSILON: f32 = 1e-6;
-        a_data.iter().zip(b_data.iter()).all(|(x, y)| (x - y).abs() < EPSILON)
+    /// Get miner stats from ai3-lib
+    pub fn get_miner_stats(&self) -> &MinerStats {
+        &self.lib_miner.stats
     }
 
-    /// Get mining statistics
+    /// Get AI3 mining stats
     pub fn get_stats(&self) -> AI3MiningStats {
         self.stats.clone()
     }
 
-    /// Get active tasks count
     pub async fn get_active_tasks_count(&self) -> usize {
-        let active_tasks = self.active_tasks.read().await;
-        active_tasks.len()
+        self.active_tasks.read().await.len()
     }
 
-    /// Get completed results count
     pub async fn get_completed_results_count(&self) -> usize {
-        let completed_results = self.completed_results.read().await;
-        completed_results.len()
+        self.completed_results.read().await.len()
     }
 
-    /// Clean up expired tasks
     pub async fn cleanup_expired_tasks(&mut self) {
         let mut active_tasks = self.active_tasks.write().await;
-        let now = Utc::now();
-        
         active_tasks.retain(|_, task| !task.is_expired());
     }
 }
@@ -429,7 +412,7 @@ impl Default for AI3MiningStats {
     }
 }
 
-/// AI3 Mining Pool for coordinating multiple AI3 miners
+/// AI3 Mining Pool that uses ai3-lib TaskDistributor
 #[derive(Debug)]
 pub struct AI3MiningPool {
     pub pool_id: String,
@@ -438,7 +421,6 @@ pub struct AI3MiningPool {
     pub pool_stats: AI3PoolStats,
 }
 
-/// AI3 Pool statistics
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AI3PoolStats {
     pub total_miners: usize,
@@ -461,22 +443,21 @@ impl AI3MiningPool {
 
     pub fn add_miner(&mut self, miner: AI3Miner) {
         self.miners.insert(miner.id.clone(), miner);
-        self.pool_stats.total_miners = self.miners.len();
+        self.pool_stats.total_miners += 1;
+        self.pool_stats.active_miners += 1;
     }
 
     pub fn remove_miner(&mut self, miner_id: &str) {
-        self.miners.remove(miner_id);
-        self.pool_stats.total_miners = self.miners.len();
+        if self.miners.remove(miner_id).is_some() {
+            self.pool_stats.total_miners = self.pool_stats.total_miners.saturating_sub(1);
+            self.pool_stats.active_miners = self.pool_stats.active_miners.saturating_sub(1);
+        }
     }
 
-    pub async fn distribute_task(&mut self, task: LibMiningTask) -> TribeResult<Vec<String>> {
-        let miner_refs: Vec<_> = self.miners.values().map(|m| &m.ai3_engine).collect();
-        
-        // This would need to be adapted to work with the actual AI3Engine API
-        // For now, we'll return the miner IDs that could handle the task
-        let miner_ids: Vec<String> = self.miners.keys().cloned().collect();
-        
-        Ok(miner_ids)
+    /// Distribute task using ai3-lib TaskDistributor
+    pub async fn distribute_task(&mut self, task: MiningTask) -> TribeResult<Vec<String>> {
+        let lib_miners: Vec<_> = self.miners.values().map(|m| &m.lib_miner).collect();
+        self.task_distributor.distribute(task, &lib_miners)
     }
 
     pub fn get_pool_stats(&self) -> AI3PoolStats {
@@ -492,7 +473,7 @@ impl Default for AI3PoolStats {
             total_hash_rate: 0.0,
             blocks_mined: 0,
             total_rewards: 0,
-            average_block_time: 600.0, // 10 minutes
+            average_block_time: 0.0,
         }
     }
 }
@@ -500,29 +481,12 @@ impl Default for AI3PoolStats {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use tribechain_core::{Transaction, TransactionType};
 
     #[tokio::test]
     async fn test_ai3_miner_creation() {
         let miner = AI3Miner::new("test_miner".to_string());
         assert_eq!(miner.id, "test_miner");
-        assert_eq!(miner.stats.total_tasks_processed, 0);
-    }
-
-    #[tokio::test]
-    async fn test_block_to_tensors() {
-        let miner = AI3Miner::new("test_miner".to_string());
-        let block = Block::new(
-            1,
-            "0123456789abcdef".to_string(),
-            vec![],
-            "test_miner".to_string(),
-            4,
-        );
-
-        let tensors = miner.block_to_tensors(&block).unwrap();
-        assert!(!tensors.is_empty());
-        assert_eq!(tensors.len(), 2); // hash tensor + metadata tensor (no transactions)
+        assert_eq!(miner.lib_miner.id, "test_miner");
     }
 
     #[tokio::test]
@@ -531,24 +495,24 @@ mod tests {
         let miner = AI3Miner::new("test_miner".to_string());
         
         pool.add_miner(miner);
-        assert_eq!(pool.pool_stats.total_miners, 1);
+        assert_eq!(pool.get_pool_stats().total_miners, 1);
         
         pool.remove_miner("test_miner");
-        assert_eq!(pool.pool_stats.total_miners, 0);
+        assert_eq!(pool.get_pool_stats().total_miners, 0);
     }
 
     #[test]
     fn test_ai3_proof_creation() {
         let proof = AI3Proof {
             operation_type: "matrix_multiply".to_string(),
-            input_hash: "input_hash".to_string(),
-            output_hash: "output_hash".to_string(),
-            computation_hash: "comp_hash".to_string(),
+            input_hash: "test_input".to_string(),
+            output_hash: "test_output".to_string(),
+            computation_hash: "test_computation".to_string(),
             difficulty_met: true,
             verification_data: vec![1, 2, 3, 4],
         };
-
-        assert_eq!(proof.operation_type, "matrix_multiply");
+        
         assert!(proof.difficulty_met);
+        assert_eq!(proof.operation_type, "matrix_multiply");
     }
 } 

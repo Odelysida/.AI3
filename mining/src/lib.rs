@@ -13,6 +13,15 @@ pub use pool::{MiningPool, PoolStats, MiningShare};
 pub use proof_of_work::{ProofOfWork, WorkProof, AI3WorkProof, MiningWork};
 pub use ai3_mining::{AI3Miner, AI3MiningResult, AI3Proof, AI3MiningPool};
 
+// Re-export ai3-lib mining types for convenience
+pub use ai3_lib::mining::{
+    MiningTask as LibMiningTask,
+    MiningResult as LibMiningResult,
+    TaskDistributor,
+    MinerCapabilities as LibMinerCapabilities,
+    MinerStats as LibMinerStats,
+};
+
 use tribechain_core::{TribeResult, TribeError};
 use serde::{Deserialize, Serialize};
 
@@ -76,6 +85,25 @@ impl MiningEngine {
         if let Some(ai3_pool) = &mut self.ai3_mining {
             ai3_pool.add_miner(miner);
             Ok(())
+        } else {
+            Err(TribeError::InvalidOperation("AI3 mining not enabled".to_string()))
+        }
+    }
+
+    /// Create AI3 mining task from block template
+    pub async fn create_ai3_mining_task(
+        &mut self,
+        block: tribechain_core::Block,
+        operation_type: String,
+        difficulty: u64,
+    ) -> TribeResult<String> {
+        if let Some(ai3_pool) = &mut self.ai3_mining {
+            // Use the first available miner to create the task
+            if let Some(miner) = ai3_pool.miners.values_mut().next() {
+                miner.create_mining_task(&block, operation_type, difficulty).await
+            } else {
+                Err(TribeError::InvalidOperation("No AI3 miners available".to_string()))
+            }
         } else {
             Err(TribeError::InvalidOperation("AI3 mining not enabled".to_string()))
         }

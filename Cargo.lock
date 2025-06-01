@@ -1963,13 +1963,16 @@ dependencies = [
 name = "tribechain-mining"
 version = "0.1.0"
 dependencies = [
+ "ai3-lib",
  "chrono",
  "hex",
+ "rand",
  "serde",
  "sha2",
  "thiserror",
  "tokio",
  "tribechain-core",
+ "uuid",
 ]
 
 [[package]]
