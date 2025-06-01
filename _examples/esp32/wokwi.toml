@@ -1,0 +1,11 @@
+[wokwi]
+version = 1
+sketch = "addon/esp32/tribechain_esp32_simple.ino"
+
+[[wokwi.scenario]]
+name = "TribeChain ESP32 Mining Test"
+timeout = 60000
+
+[wokwi.libs]
+# Required libraries for the ESP32 sketch
+ArduinoJson = "6.21.3"

@@ -1,0 +1,49 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Wokwi GDB - ESP32 TribeChain Miner",
+      "type": "cppdbg",
+      "request": "launch",
+      "program": "${workspaceFolder}/addon/esp32/tribechain_esp32.ino.elf",
+      "cwd": "${workspaceFolder}",
+      "MIMode": "gdb",
+      "miDebuggerPath": "xtensa-esp32s3-elf-gdb",
+      "miDebuggerServerAddress": "localhost:3333",
+      "setupCommands": [
+        {
+          "description": "Enable pretty-printing for gdb",
+          "text": "-enable-pretty-printing",
+          "ignoreFailures": true
+        },
+        {
+          "description": "Set Disassembly Flavor to Intel",
+          "text": "-gdb-set disassembly-flavor intel",
+          "ignoreFailures": true
+        }
+      ],
+      "stopAtEntry": false,
+      "externalConsole": false,
+      "logging": {
+        "engineLogging": false,
+        "programOutput": true,
+        "trace": false
+      }
+    },
+    {
+      "name": "Rust TribeChain Demo",
+      "type": "lldb",
+      "request": "launch",
+      "program": "${workspaceFolder}/target/debug/examples/esp32_mining_demo",
+      "args": [],
+      "cwd": "${workspaceFolder}",
+      "stopOnEntry": false,
+      "environment": [
+        {
+          "name": "RUST_LOG",
+          "value": "debug"
+        }
+      ]
+    }
+  ]
+} 

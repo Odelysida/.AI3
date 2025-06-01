@@ -1,0 +1,101 @@
+{
+  "version": 1,
+  "author": "TribeChain",
+  "editor": "wokwi",
+  "parts": [
+    {
+      "type": "wokwi-esp32-devkit-v1",
+      "id": "esp",
+      "top": 0,
+      "left": 0,
+      "attrs": {}
+    },
+    {
+      "type": "wokwi-led",
+      "id": "led1",
+      "top": -24,
+      "left": 178.67,
+      "attrs": {
+        "color": "red"
+      }
+    },
+    {
+      "type": "wokwi-led",
+      "id": "led2",
+      "top": -24,
+      "left": 207.33,
+      "attrs": {
+        "color": "green"
+      }
+    },
+    {
+      "type": "wokwi-resistor",
+      "id": "r1",
+      "top": 29.6,
+      "left": 172.8,
+      "attrs": {
+        "value": "220"
+      }
+    },
+    {
+      "type": "wokwi-resistor",
+      "id": "r2",
+      "top": 29.6,
+      "left": 201.6,
+      "attrs": {
+        "value": "220"
+      }
+    }
+  ],
+  "connections": [
+    [
+      "esp:TX0",
+      "$serialMonitor:RX",
+      "",
+      []
+    ],
+    [
+      "esp:RX0",
+      "$serialMonitor:TX",
+      "",
+      []
+    ],
+    [
+      "esp:D2",
+      "led1:A",
+      "",
+      []
+    ],
+    [
+      "led1:C",
+      "r1:1",
+      "",
+      []
+    ],
+    [
+      "r1:2",
+      "esp:GND.1",
+      "",
+      []
+    ],
+    [
+      "esp:D4",
+      "led2:A",
+      "",
+      []
+    ],
+    [
+      "led2:C",
+      "r2:1",
+      "",
+      []
+    ],
+    [
+      "r2:2",
+      "esp:GND.2",
+      "",
+      []
+    ]
+  ],
+  "dependencies": {}
+}
