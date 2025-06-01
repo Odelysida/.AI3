@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
-use chrono::{DateTime, Utc};
-use crate::{Transaction, TribeResult, TribeError};
+use chrono::Utc;
+use crate::{Transaction, TribeResult};
 
 /// Block structure for TribeChain
 #[derive(Debug, Clone, Serialize, Deserialize)]

@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use chrono::Utc;
 use uuid::Uuid;
-use crate::{TribeResult, TribeError};
+use crate::TribeResult;
 
 /// Transaction types supported by TribeChain
 #[derive(Debug, Clone, Serialize, Deserialize)]
