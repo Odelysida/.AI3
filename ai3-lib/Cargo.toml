@@ -9,7 +9,7 @@ description = "AI3 tensor operation library for TribeChain"
 tribechain-core = { path = "../core" }
 serde = { version = "1.0", features = ["derive"] }
 sha2 = "0.10"
-ndarray = "0.15"
+ndarray = "0.16"
 rand = "0.8"
 thiserror = "1.0"
 chrono = { version = "0.4", features = ["serde"] }
