@@ -1,0 +1,125 @@
+version: 2
+updates:
+  # Rust dependencies
+  - package-ecosystem: "cargo"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+    open-pull-requests-limit: 10
+    reviewers:
+      - "BitTribe"
+    assignees:
+      - "BitTribe"
+    commit-message:
+      prefix: "cargo"
+      include: "scope"
+    labels:
+      - "dependencies"
+      - "rust"
+    groups:
+      minor-updates:
+        patterns:
+          - "*"
+        update-types:
+          - "minor"
+          - "patch"
+
+  # Core workspace dependencies
+  - package-ecosystem: "cargo"
+    directory: "/core"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "core"
+      include: "scope"
+    labels:
+      - "dependencies"
+      - "core"
+
+  # Mining workspace dependencies
+  - package-ecosystem: "cargo"
+    directory: "/mining"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "mining"
+      include: "scope"
+    labels:
+      - "dependencies"
+      - "mining"
+
+  # Network workspace dependencies
+  - package-ecosystem: "cargo"
+    directory: "/network"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "network"
+      include: "scope"
+    labels:
+      - "dependencies"
+      - "network"
+
+  # Contracts workspace dependencies
+  - package-ecosystem: "cargo"
+    directory: "/contracts"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "contracts"
+      include: "scope"
+    labels:
+      - "dependencies"
+      - "contracts"
+
+  # AI3 library dependencies
+  - package-ecosystem: "cargo"
+    directory: "/ai3-lib"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "ai3-lib"
+      include: "scope"
+    labels:
+      - "dependencies"
+      - "ai3"
+
+  # GitHub Actions
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+    open-pull-requests-limit: 5
+    reviewers:
+      - "BitTribe"
+    assignees:
+      - "BitTribe"
+    commit-message:
+      prefix: "ci"
+      include: "scope"
+    labels:
+      - "dependencies"
+      - "github-actions"
+    groups:
+      actions-updates:
+        patterns:
+          - "*" 

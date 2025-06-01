@@ -1,0 +1,49 @@
+# Git
+.git
+.gitignore
+
+# Build artifacts
+target/
+.dist/
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Documentation
+*.md
+!README.md
+
+# Examples and tests
+_examples/
+tests/
+
+# CI/CD
+.github/
+
+# Rust
+**/*.rs.bk
+Cargo.lock
+
+# Logs
+*.log
+
+# Temporary files
+*.tmp
+*.temp
+
+# Windows
+*.exe
+rustup-init.exe
+
+# Setup scripts
+setup-*.sh
+setup-*.ps1
+SETUP.md 
