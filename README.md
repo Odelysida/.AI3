@@ -1,4 +1,4 @@
-# TribeChain - AI-Powered Blockchain with Tensor Mining
+# WIP TribeChain - AI-Powered Blockchain with Tensor Mining 
 
 TribeChain is an innovative blockchain platform developed by BitTribe that combines traditional blockchain technology with AI-powered tensor operations. It features a unique mining algorithm optimized for small CPUs like ESP32S and ESP8266, making it accessible for IoT devices and edge computing.
 
@@ -218,7 +218,7 @@ void loop() {
 
 ## Development
 
-### Project Structure
+### Project Structure (deprecated)
 ```
 src/
 ├── lib.rs          # Main library exports
@@ -258,8 +258,8 @@ cargo bench
 - ✅ Core blockchain implementation
 - ✅ AI3 tensor mining
 - ✅ Multi-token system
-- ✅ P2P networking
-- ✅ ESP32/ESP8266 support
+- 🔄 P2P networking
+- 🔄 ESP32/ESP8266 support
 
 ### Phase 2 (Q2 2026)
 - 🔄 Web interface and explorer
